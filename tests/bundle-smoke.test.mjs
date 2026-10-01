@@ -119,6 +119,7 @@ test('the built client bundle loads, registers, and tears down cleanly', async (
       if (selector === '[data-pane="conversation"] [data-chat-anchor-key]') return row
       return null
     },
+    querySelectorAll: (selector) => (selector === '[data-pane="conversation"] [data-chat-anchor-key]' ? [row] : []),
     addEventListener: () => {},
     removeEventListener: () => {},
   }
@@ -149,6 +150,9 @@ test('the built client bundle loads, registers, and tears down cleanly', async (
     }
   }
 
+  /** The element the injected stylesheet marks as blurred, in order of injection. */
+  const blurred = () => [...html.children, ...body.children].filter((node) => node.hasAttribute('data-blur'))
+
   try {
     const require = (id) => {
       if (id === 'react' || id === 'react/jsx-runtime') return react.module
@@ -166,6 +170,29 @@ test('the built client bundle loads, registers, and tears down cleanly', async (
     assert.equal(typeof exports.apply, 'function', 'the bundle must export apply')
     assert.deepEqual(exports.inject, ['slots', 'locale'])
     assert.equal(typeof exports.mountStyles, 'function')
+
+    // The locale service resolves a key as a LITERAL property of the
+    // dictionary (no dot-path walking), so every label the panel asks for must
+    // be a flat, dotted key. This caught a panel that rendered raw key names.
+    const dictionary = exports.dictionaries
+    assert.equal(typeof dictionary, 'object', 'the bundle exports its dictionaries')
+    for (const [locale, entries] of Object.entries(dictionary)) {
+      for (const [key, value] of Object.entries(entries)) {
+        assert.equal(typeof value, 'string', `${locale}:${key} must be a string`)
+        assert.doesNotMatch(key, /\s/u, `${locale}:${key} must be a key, not prose`)
+      }
+      for (const key of ['nav', 'title', 'intro', 'enable', 'enableHint', 'reset', 'advanced', 'file', 'none']) {
+        assert.equal(typeof entries[key], 'string', `${locale} is missing ${key}`)
+      }
+      for (const field of exports.fieldKeys) {
+        assert.equal(typeof entries[`fields.${field}.label`], 'string', `${locale} is missing fields.${field}.label`)
+        assert.equal(typeof entries[`fields.${field}.hint`], 'string', `${locale} is missing fields.${field}.hint`)
+      }
+    }
+    // Resolve through the app's own lookup shape: dict[key] with a common-namespace fallback.
+    const lookup = (locale, key) => dictionary[locale][key] ?? dictionary.en[key] ?? key
+    assert.equal(lookup('zh', 'fields.bubbleOpacity.label'), '气泡不透明度')
+    assert.notEqual(lookup('en', 'fields.bubbleOpacity.label'), 'fields.bubbleOpacity.label')
 
     const registered = []
     let rendered = null
@@ -204,6 +231,11 @@ test('the built client bundle loads, registers, and tears down cleanly', async (
     assert.equal(paintStyles.length, 1, 'the paint stylesheet is mounted')
     assert.match(paintStyles[0].textContent, /--dsh-skin-bubble-blur/)
     assert.equal(body.hasAttribute('data-skin-tuner'), true, 'the tuner is active')
+    assert.equal(html.children.length >= 1, true, 'the backdrop is mounted on the document element')
+    // The shipped defaults ask for composer frost and nothing else, so exactly
+    // one blurred surface exists - the frost. This is the shape that used to
+    // smear the conversation.
+    assert.equal(blurred().length, 1, 'only the composer frost carries a backdrop filter by default')
     // The first paint uses the defaults; the Host document arrives right after.
     assert.equal(body.style.getPropertyValue('--dsh-skin-bubble-alpha'), '1')
 
@@ -236,7 +268,8 @@ test('the built client bundle loads, registers, and tears down cleanly', async (
 
   assert.equal(body.hasAttribute('data-skin-tuner'), false, 'teardown removes every marker')
   assert.equal(head.children.length, 0, 'teardown removes both stylesheets')
-  assert.equal(body.children.length, 0, 'teardown removes the paint elements')
+  assert.equal(body.children.length, 0, 'nothing was ever injected into the app subtree')
+  assert.equal(html.children.length, 0, 'teardown removes the paint elements')
   // The paint installs real timers; a leak here would hang the whole test run
   // instead of failing a test, so assert the loop is empty.
   assert.deepEqual(process.getActiveResourcesInfo().filter((kind) => kind === 'Timeout'), [])

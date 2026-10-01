@@ -21,6 +21,20 @@ const ROUTE_PREFIX = '/dsh-skin-tuner'
 /** Refuse write bodies larger than any legitimate document. */
 const MAX_BODY_BYTES = 16_384
 
+/** Hostnames that only ever mean "this machine". */
+const LOOPBACK_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '[::1]', '::1'])
+
+/**
+ * Split a `host:port` authority, tolerating the bracketed IPv6 form.
+ * @param {string} authority - a Host header value or an Origin's host.
+ * @returns {{ hostname: string, port: string } | null} the parts, or null when unparsable.
+ */
+function splitAuthority(authority) {
+  const match = /^(\[[^\]]+\]|[^:]+)(?::(\d+))?$/u.exec(authority.trim())
+  if (match === null) return null
+  return { hostname: match[1].toLowerCase(), port: match[2] ?? '' }
+}
+
 /**
  * Reply with JSON.
  * @param {import('node:http').ServerResponse} response - the pending response.
@@ -56,17 +70,28 @@ function methodGuard(request, response, allowed) {
  * Require a same-origin write: a cross-site page must not be able to change the
  * GUI's appearance through the loopback listener.
  * @param {import('node:http').IncomingMessage} request - the request.
- * @returns {boolean} true when Origin matches Host.
+ * @returns {boolean} true when the write may proceed.
  */
 function sameOrigin(request) {
   const origin = request.headers.origin
   const host = request.headers.host
   if (typeof origin !== 'string' || typeof host !== 'string') return false
+  let parsed
   try {
-    return new URL(origin).host === host
+    parsed = new URL(origin)
   } catch {
     return false
   }
+  if (parsed.host === host) return true
+  // Two spellings of the same loopback listener are one origin: the page may be
+  // open as `127.0.0.1` while a request carries `localhost`, or the reverse.
+  // The desktop app serves the page and the API from the same listener, so the
+  // ports always agree; a differing explicit port is a different origin.
+  const source = splitAuthority(parsed.host)
+  const target = splitAuthority(host)
+  if (source === null || target === null) return false
+  const portsAgree = source.port === '' || target.port === '' || source.port === target.port
+  return portsAgree && LOOPBACK_HOSTNAMES.has(source.hostname) && LOOPBACK_HOSTNAMES.has(target.hostname)
 }
 
 /**
@@ -115,7 +140,12 @@ export function apply(ctx) {
         }
         if (!methodGuard(request, response, ['POST'])) return
         if (!sameOrigin(request)) {
-          sendJson(response, 403, { ok: false, error: 'cross-origin writes are refused' })
+          // The panel shows this text, so it names exactly what was refused.
+          warn(`refused a write with Origin ${JSON.stringify(request.headers.origin ?? null)} for Host ${JSON.stringify(request.headers.host ?? null)}`)
+          sendJson(response, 403, {
+            ok: false,
+            error: `cross-origin writes are refused (Origin ${JSON.stringify(request.headers.origin ?? null)}, Host ${JSON.stringify(request.headers.host ?? null)})`,
+          })
           return
         }
         try {

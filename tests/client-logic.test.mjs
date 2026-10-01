@@ -65,10 +65,17 @@ function createDocumentStub({ withMessage = true } = {}) {
       if (selector === '[data-pane="conversation"] [data-chat-anchor-key]') return withMessage ? row : null
       return null
     },
+    querySelectorAll: (selector) => {
+      const rows = selector === '[data-pane="conversation"] [data-chat-anchor-key]' && withMessage ? [row] : []
+      // Teardown asks for the rows it marked; a real document would answer that
+      // query with exactly the marked rows.
+      if (selector === '[data-skin-tuner-bubble]') return row.hasAttribute('data-skin-tuner-bubble') ? [row] : []
+      return rows
+    },
     addEventListener: () => {},
     removeEventListener: () => {},
   }
-  return { doc, body, html, head }
+  return { doc, body, html, head, seat, row }
 }
 
 test('normalize fills defaults and clamps the outliers', () => {
@@ -131,7 +138,7 @@ test('a failed load keeps the defaults and reports the reason', async () => {
 })
 
 test('applySettings writes the shared contract and undoes it exactly', () => {
-  const { doc, body, html, head } = createDocumentStub()
+  const { doc, body, html, head, row } = createDocumentStub()
   const undo = applySettings(
     { enabled: true, backgroundOpacity: 40, backgroundBlurEmpty: 3, backgroundBlurContent: 8, inputCardBlur: 12, bubbleOpacity: 85, bubbleBlur: 6 },
     doc,
@@ -141,26 +148,48 @@ test('applySettings writes the shared contract and undoes it exactly', () => {
   assert.equal(body.style.getPropertyValue('--dsh-skin-bubble-blur'), '6px')
   assert.equal(body.style.getPropertyValue('--dsh-input-card-blur'), '12px')
   assert.equal(body.hasAttribute('data-skin-tuner'), true)
-  assert.equal(body.hasAttribute('data-skin-tuner-content'), true)
-  assert.equal(body.hasAttribute('data-skin-tuner-bubble-blur'), true)
+  assert.equal(html.hasAttribute('data-skin-tuner-bubble-blur'), true)
   assert.equal(head.children.length, 1, 'one style element is injected')
-  assert.equal(body.children.length, 2, 'backdrop and composer frost are appended')
-  assert.equal(html.style.getPropertyValue('--dsh-skin-tuner-bg-blur'), '8px')
+  // Both painted surfaces live on the document element, outside the app root.
+  assert.equal(html.children.length, 2, 'backdrop and composer frost are appended to <html>')
+  assert.equal(body.children.length, 0, 'nothing is injected into the app subtree')
+  // With content present the "with content" blur step is the active one.
+  assert.equal(body.style.getPropertyValue('--dsh-skin-tuner-bg-blur'), '8px')
+  assert.equal(html.children[0].getAttribute('data-blur'), '')
+  // The bubble rule targets rows explicitly, and only while the slider asks.
+  assert.equal(row.hasAttribute('data-skin-tuner-bubble'), true)
+  assert.equal(html.hasAttribute('data-skin-tuner-bubble-blur'), true, 'the marker that gates the bubble rule is on the document element')
 
   undo()
   assert.equal(body.style.getPropertyValue('--dsw-skin-scrim'), '')
   assert.equal(body.style.getPropertyValue('--dsh-input-card-blur'), '')
+  assert.equal(body.style.getPropertyValue('--dsh-skin-tuner-bg-blur'), '')
   assert.equal(body.hasAttribute('data-skin-tuner'), false)
+  assert.equal(html.hasAttribute('data-skin-tuner-bubble-blur'), false, 'the bubble marker leaves the document element')
+  assert.equal(row.hasAttribute('data-skin-tuner-bubble'), false, 'the bubble marker leaves every row')
   assert.equal(head.children.length, 0)
-  assert.equal(html.style.getPropertyValue('--dsh-skin-tuner-bg-blur'), '')
+  assert.equal(html.children.length, 0)
+})
+
+test('a zero blur keeps backdrop-filter off entirely', () => {
+  const { doc, html } = createDocumentStub({ withMessage: false })
+  const undo = applySettings(
+    { enabled: true, backgroundOpacity: 0, backgroundBlurEmpty: 0, backgroundBlurContent: 0, inputCardBlur: 0, bubbleOpacity: 100, bubbleBlur: 0 },
+    doc,
+  )
+  // `blur(0px)` still creates a backdrop root, so the attribute must be absent.
+  assert.equal(html.children[0].hasAttribute('data-blur'), false, 'no backdrop blur at 0')
+  assert.equal(html.children.length, 1, 'no composer frost element is created at 0')
+  assert.equal(html.hasAttribute('data-skin-tuner-bubble-blur'), false, 'no bubble blur marker at 0')
+  undo()
 })
 
 test('a disabled tuner writes nothing at all', () => {
-  const { doc, body, head } = createDocumentStub()
+  const { doc, body, html, head } = createDocumentStub()
   const undo = applySettings({ enabled: false, backgroundOpacity: 40, bubbleOpacity: 0, bubbleBlur: 6, inputCardBlur: 12, backgroundBlurContent: 8, backgroundBlurEmpty: 0 }, doc)
   assert.equal(body.hasAttribute('data-skin-tuner'), false)
   assert.equal(body.style.getPropertyValue('--dsw-skin-scrim'), '')
-  assert.equal(body.children.length, 0)
+  assert.equal(html.children.length, 0)
   assert.equal(head.children.length, 1, 'the stylesheet is still present but gated off')
   undo()
   assert.equal(head.children.length, 0)

@@ -111,6 +111,56 @@ test('a same-origin write is accepted and clamped', async () => {
   assert.equal(payload.settings.inputCardBlur, 5)
 })
 
+test('a write without an Origin header is refused', async () => {
+  const { route } = mount()
+  const response = createResponse()
+  await route.handler(createRequest({ method: 'POST', body: { bubbleOpacity: 1 } }), response)
+  assert.equal(response.status, 403)
+})
+
+test('the other loopback spelling of the same listener is accepted', async () => {
+  const { route } = mount()
+  const response = createResponse()
+  await route.handler(
+    createRequest({
+      method: 'POST',
+      origin: 'http://localhost:19387',
+      host: '127.0.0.1:19387',
+      body: { bubbleOpacity: 12 },
+    }),
+    response,
+  )
+  assert.equal(response.status, 200, JSON.parse(response.body).error ?? '')
+  assert.equal(JSON.parse(response.body).settings.bubbleOpacity, 12)
+})
+
+test('a write from a different port is refused', async () => {
+  const { route } = mount()
+  const response = createResponse()
+  await route.handler(
+    createRequest({
+      method: 'POST',
+      origin: 'http://127.0.0.1:3080',
+      host: '127.0.0.1:19387',
+      body: { bubbleOpacity: 12 },
+    }),
+    response,
+  )
+  assert.equal(response.status, 403)
+})
+
+test('the refusal names the Origin it refused', async () => {
+  const { route } = mount()
+  const response = createResponse()
+  await route.handler(
+    createRequest({ method: 'POST', origin: 'https://evil.example', host: '127.0.0.1:19387', body: {} }),
+    response,
+  )
+  assert.equal(response.status, 403)
+  assert.match(JSON.parse(response.body).error, /evil\.example/)
+  assert.match(JSON.parse(response.body).error, /127\.0\.0\.1:19387/)
+})
+
 test('an unsupported method is rejected with Allow', async () => {
   const { route } = mount()
   const response = createResponse()

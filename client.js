@@ -22,6 +22,8 @@ var index_exports = {};
 __export(index_exports, {
   DEFAULT_FIELDS: () => DEFAULT_FIELDS,
   apply: () => apply,
+  dictionaries: () => dictionaries,
+  fieldKeys: () => fieldKeys,
   inject: () => inject,
   mountStyles: () => mountStyles,
   skinCenterActive: () => skinCenterActive
@@ -44,8 +46,8 @@ var BUBBLE_ALPHA_VAR = "--dsh-skin-bubble-alpha";
 var BUBBLE_BLUR_VAR = "--dsh-skin-bubble-blur";
 var INPUT_CARD_BLUR_VAR = "--dsh-input-card-blur";
 var ACTIVE_ATTR = "data-skin-tuner";
-var CONTENT_ATTR = "data-skin-tuner-content";
 var BUBBLE_BLUR_ATTR = "data-skin-tuner-bubble-blur";
+var BUBBLE_BLUR_TARGET_ATTR = "data-skin-tuner-bubble";
 var COMPOSER_FROST_ATTR = "data-skin-tuner-composer-frost";
 var BACKDROP_ELEM_ATTR = "data-skin-tuner-backdrop";
 var COMPOSER_SELECTOR = "[data-composer-seat]";
@@ -197,46 +199,53 @@ function applySettings(settings, doc = document) {
   const style = doc.createElement("style");
   style.dataset.skinTunerStyle = "";
   style.textContent = [
-    `body[${ACTIVE_ATTR}] [${BACKDROP_ELEM_ATTR}] {`,
+    `html > [${BACKDROP_ELEM_ATTR}] {`,
     "  position: fixed;",
     "  inset: 0;",
     "  z-index: 0;",
     "  pointer-events: none;",
     "  background: var(--dsw-alias-bg-base, rgb(0 0 0 / 45%));",
     "}",
-    `body[${ACTIVE_ATTR}][${CONTENT_ATTR}] [${BACKDROP_ELEM_ATTR}] {`,
+    // `isolation: isolate` gives each blurred element its own backdrop root.
+    // Without it a backdrop-filter element blurs everything painted below it -
+    // including the other one of ours - which used to smear the composer frost
+    // into the conversation.
+    `html > [${BACKDROP_ELEM_ATTR}][data-blur] {`,
+    "  isolation: isolate;",
     "  backdrop-filter: blur(var(--dsh-skin-tuner-bg-blur, 0px));",
     "  -webkit-backdrop-filter: blur(var(--dsh-skin-tuner-bg-blur, 0px));",
     "}",
-    `body[${ACTIVE_ATTR}][${BUBBLE_BLUR_ATTR}] ${MESSAGE_ROW_SELECTOR} > * {`,
-    "  backdrop-filter: blur(var(--dsh-skin-bubble-blur, 0px));",
-    "  -webkit-backdrop-filter: blur(var(--dsh-skin-bubble-blur, 0px));",
+    `html > [${COMPOSER_FROST_ATTR}][data-blur] {`,
+    "  isolation: isolate;",
+    "  backdrop-filter: blur(var(--dsh-input-card-blur, 10px));",
+    "  -webkit-backdrop-filter: blur(var(--dsh-input-card-blur, 10px));",
     "}",
-    `body[${ACTIVE_ATTR}] [${COMPOSER_FROST_ATTR}] {`,
+    `html > [${COMPOSER_FROST_ATTR}] {`,
     "  position: fixed;",
     "  z-index: 1;",
     "  pointer-events: none;",
     "  border-radius: var(--dsw-radius-panel, 16px);",
-    "  backdrop-filter: blur(var(--dsh-input-card-blur, 10px));",
-    "  -webkit-backdrop-filter: blur(var(--dsh-input-card-blur, 10px));",
     "}",
-    "@media (prefers-reduced-motion: reduce) {",
-    `  body[${ACTIVE_ATTR}] [${BACKDROP_ELEM_ATTR}],`,
-    `  body[${ACTIVE_ATTR}] [${COMPOSER_FROST_ATTR}] { transition: none; }`,
+    // Bubble blur is the only rule that a skin may already implement; it stays
+    // off unless the slider actually asks for it, so the default paint is
+    // byte-identical to no tuner at all.
+    `html[${BUBBLE_BLUR_ATTR}] [${BUBBLE_BLUR_TARGET_ATTR}] {`,
+    "  isolation: isolate;",
+    "  backdrop-filter: blur(var(--dsh-skin-bubble-blur, 0px));",
+    "  -webkit-backdrop-filter: blur(var(--dsh-skin-bubble-blur, 0px));",
     "}"
   ].join("\n");
   doc.head.append(style);
-  const previous = /* @__PURE__ */ new Map();
-  const remember = (element, property) => {
-    previous.set(`${property}`, element.style.getPropertyValue(property));
-  };
+  const startingBodyVars = /* @__PURE__ */ new Map();
+  const previousAttrs = /* @__PURE__ */ new Map();
   const setVar = (property, value) => {
-    remember(body, property);
+    if (!startingBodyVars.has(property)) startingBodyVars.set(property, body.style.getPropertyValue(property));
     body.style.setProperty(property, value);
   };
   const setAttr = (element, attribute, value) => {
-    const key = `attr:${attribute}`;
-    if (!previous.has(key)) previous.set(key, element.getAttribute(attribute));
+    const scope = element === html ? "html" : "body";
+    const key = `attr:${attribute}|${scope}`;
+    if (!previousAttrs.has(key)) previousAttrs.set(key, element.getAttribute(attribute));
     if (value === null) element.removeAttribute(attribute);
     else element.setAttribute(attribute, value);
   };
@@ -246,15 +255,29 @@ function applySettings(settings, doc = document) {
   const frost = doc.createElement("div");
   frost.setAttribute(COMPOSER_FROST_ATTR, "");
   frost.setAttribute("aria-hidden", "true");
+  const setBlurStrength = (value) => {
+    if (value > 0) {
+      backdrop.setAttribute("data-blur", "");
+      setVar("--dsh-skin-tuner-bg-blur", `${value}px`);
+    } else {
+      backdrop.removeAttribute("data-blur");
+      body.style.removeProperty("--dsh-skin-tuner-bg-blur");
+    }
+  };
   const enabled = settings.enabled !== false;
   if (enabled) {
-    body.append(backdrop, frost);
+    html.append(backdrop);
+    if (settings.inputCardBlur > 0) {
+      frost.setAttribute("data-blur", "");
+      html.append(frost);
+    }
     setAttr(body, ACTIVE_ATTR, "");
+    setAttr(html, BUBBLE_BLUR_ATTR, settings.bubbleBlur > 0 ? "" : null);
     setVar(SCRIM_VAR, String(settings.backgroundOpacity / 100));
     setVar(BUBBLE_ALPHA_VAR, String(settings.bubbleOpacity / 100));
     setVar(BUBBLE_BLUR_VAR, `${settings.bubbleBlur}px`);
     setVar(INPUT_CARD_BLUR_VAR, `${settings.inputCardBlur}px`);
-    if (settings.bubbleBlur > 0) setAttr(body, BUBBLE_BLUR_ATTR, "");
+    setBlurStrength(settings.backgroundBlurEmpty);
   }
   const timers = /* @__PURE__ */ new Set();
   const every = (fn, ms) => {
@@ -265,15 +288,19 @@ function applySettings(settings, doc = document) {
   const syncContentState = () => {
     if (!enabled) return;
     const hasContent = doc.querySelector(MESSAGE_ROW_SELECTOR) !== null;
-    if (hasContent) setAttr(body, CONTENT_ATTR, "");
-    else setAttr(body, CONTENT_ATTR, null);
-    html.style.setProperty(
-      "--dsh-skin-tuner-bg-blur",
-      `${hasContent ? settings.backgroundBlurContent : settings.backgroundBlurEmpty}px`
-    );
+    setBlurStrength(hasContent ? settings.backgroundBlurContent : settings.backgroundBlurEmpty);
+  };
+  const syncBubbleBlurTargets = () => {
+    if (!enabled) return;
+    const wanted = settings.bubbleBlur > 0;
+    if (!wanted) setAttr(html, BUBBLE_BLUR_ATTR, null);
+    for (const row of doc.querySelectorAll(MESSAGE_ROW_SELECTOR)) {
+      if (wanted) row.setAttribute(BUBBLE_BLUR_TARGET_ATTR, "");
+      else row.removeAttribute(BUBBLE_BLUR_TARGET_ATTR);
+    }
   };
   const syncComposerFrost = () => {
-    if (!enabled) return;
+    if (!enabled || settings.inputCardBlur <= 0) return;
     const seat = doc.querySelector(COMPOSER_SELECTOR);
     if (seat === null) {
       frost.style.display = "none";
@@ -292,8 +319,10 @@ function applySettings(settings, doc = document) {
   };
   if (enabled) {
     syncContentState();
+    syncBubbleBlurTargets();
     syncComposerFrost();
     every(syncContentState, 500);
+    every(syncBubbleBlurTargets, 1e3);
     every(syncComposerFrost, 250);
     doc.addEventListener("scroll", syncComposerFrost, { capture: true, passive: true });
     globalThis.addEventListener?.("resize", syncComposerFrost, { passive: true });
@@ -306,15 +335,21 @@ function applySettings(settings, doc = document) {
     style.remove();
     backdrop.remove();
     frost.remove();
-    for (const [key, value] of previous) {
-      if (key.startsWith("attr:")) {
-        const attribute = key.slice(5);
-        if (value === null) body.removeAttribute(attribute);
-        else body.setAttribute(attribute, value);
-      } else if (value === "") body.style.removeProperty(key);
-      else body.style.setProperty(key, value);
+    for (const row of doc.querySelectorAll(`[${BUBBLE_BLUR_TARGET_ATTR}]`)) {
+      row.removeAttribute(BUBBLE_BLUR_TARGET_ATTR);
     }
-    html.style.removeProperty("--dsh-skin-tuner-bg-blur");
+    for (const [property, starting] of startingBodyVars) {
+      if (starting === "") body.style.removeProperty(property);
+      else body.style.setProperty(property, starting);
+    }
+    startingBodyVars.clear();
+    for (const [key, value] of previousAttrs) {
+      const [attribute, scope] = key.slice(5).split("|");
+      const element = scope === "html" ? html : body;
+      if (value === null) element.removeAttribute(attribute);
+      else element.setAttribute(attribute, value);
+    }
+    previousAttrs.clear();
   };
 }
 var SELECTORS = Object.freeze({
@@ -344,14 +379,18 @@ var zh = {
   detectHint: "\u5EFA\u8BAE\u505C\u7528\u76AE\u80A4\u4E2D\u5FC3\uFF0C\u6216\u5728\u90A3\u8FB9\u8C03\u5B8C\u80CC\u666F\u540E\u4E0D\u8981\u5728\u672C\u9875\u91CD\u590D\u8BBE\u7F6E\u3002",
   file: "\u5B58\u50A8\u6587\u4EF6",
   none: "\uFF08\u5C1A\u672A\u843D\u76D8\uFF09",
-  fields: {
-    backgroundOpacity: { label: "\u80CC\u666F\u906E\u6321", hint: "\u7ED9\u9762\u677F\u80CC\u540E\u7684\u80CC\u666F\u56FE\u52A0\u7EB1\uFF1B0 \u5B8C\u5168\u4E0D\u906E\uFF0C100 \u51E0\u4E4E\u5168\u906E\u3002\u4EC5\u5BF9\u5E26\u80CC\u666F\u56FE\u7684\u76AE\u80A4\u53EF\u89C1\u3002" },
-    backgroundBlurEmpty: { label: "\u7A7A\u5BF9\u8BDD\u80CC\u666F\u6A21\u7CCA", hint: "\u5BF9\u8BDD\u4E3A\u7A7A\u65F6\uFF0C\u80CC\u666F\u56FE\u7684\u9AD8\u65AF\u6A21\u7CCA\u5F3A\u5EA6\uFF1B0 \u4E3A\u5173\u95ED\u3002" },
-    backgroundBlurContent: { label: "\u6709\u5BF9\u8BDD\u80CC\u666F\u6A21\u7CCA", hint: "\u5BF9\u8BDD\u6709\u5185\u5BB9\u65F6\uFF0C\u80CC\u666F\u56FE\u7684\u9AD8\u65AF\u6A21\u7CCA\u5F3A\u5EA6\uFF1B0 \u4E3A\u5173\u95ED\u3002" },
-    inputCardBlur: { label: "\u8F93\u5165\u5361\u78E8\u7802", hint: "\u53EA\u6A21\u7CCA\u8F93\u5165\u5361\u80CC\u540E\u7684\u533A\u57DF\uFF0C\u6574\u5F20\u80CC\u666F\u56FE\u4E0D\u53D8\u7CCA\u3002" },
-    bubbleOpacity: { label: "\u6C14\u6CE1\u4E0D\u900F\u660E\u5EA6", hint: "\u6D88\u606F\u6C14\u6CE1\u7684\u4E0D\u900F\u660E\u5EA6\uFF1B\u8D8A\u9AD8\u5B57\u8D8A\u6E05\u695A\u3002100 \u4E3A\u5B8C\u5168\u4E0D\u900F\u660E\u3002" },
-    bubbleBlur: { label: "\u6C14\u6CE1\u6A21\u7CCA\u7A0B\u5EA6", hint: "\u6A21\u7CCA\u534A\u900F\u660E\u6C14\u6CE1\u80CC\u540E\u7684\u533A\u57DF\uFF0C\u4E0E\u300C\u6C14\u6CE1\u4E0D\u900F\u660E\u5EA6\u300D\u76F8\u4E92\u72EC\u7ACB\uFF1B0 \u4E3A\u5173\u95ED\u3002" }
-  }
+  "fields.backgroundOpacity.label": "\u80CC\u666F\u906E\u6321",
+  "fields.backgroundOpacity.hint": "\u7ED9\u9762\u677F\u80CC\u540E\u7684\u80CC\u666F\u56FE\u52A0\u7EB1\uFF1B0 \u5B8C\u5168\u4E0D\u906E\uFF0C100 \u51E0\u4E4E\u5168\u906E\u3002\u4EC5\u5BF9\u5E26\u80CC\u666F\u56FE\u7684\u76AE\u80A4\u53EF\u89C1\u3002",
+  "fields.backgroundBlurEmpty.label": "\u7A7A\u5BF9\u8BDD\u80CC\u666F\u6A21\u7CCA",
+  "fields.backgroundBlurEmpty.hint": "\u5BF9\u8BDD\u4E3A\u7A7A\u65F6\uFF0C\u80CC\u666F\u56FE\u7684\u9AD8\u65AF\u6A21\u7CCA\u5F3A\u5EA6\uFF1B0 \u4E3A\u5173\u95ED\u3002",
+  "fields.backgroundBlurContent.label": "\u6709\u5BF9\u8BDD\u80CC\u666F\u6A21\u7CCA",
+  "fields.backgroundBlurContent.hint": "\u5BF9\u8BDD\u6709\u5185\u5BB9\u65F6\uFF0C\u80CC\u666F\u56FE\u7684\u9AD8\u65AF\u6A21\u7CCA\u5F3A\u5EA6\uFF1B0 \u4E3A\u5173\u95ED\u3002",
+  "fields.inputCardBlur.label": "\u8F93\u5165\u5361\u78E8\u7802",
+  "fields.inputCardBlur.hint": "\u53EA\u6A21\u7CCA\u8F93\u5165\u5361\u80CC\u540E\u7684\u533A\u57DF\uFF0C\u6574\u5F20\u80CC\u666F\u56FE\u4E0D\u53D8\u7CCA\u3002",
+  "fields.bubbleOpacity.label": "\u6C14\u6CE1\u4E0D\u900F\u660E\u5EA6",
+  "fields.bubbleOpacity.hint": "\u6D88\u606F\u6C14\u6CE1\u7684\u4E0D\u900F\u660E\u5EA6\uFF1B\u8D8A\u9AD8\u5B57\u8D8A\u6E05\u695A\u3002100 \u4E3A\u5B8C\u5168\u4E0D\u900F\u660E\u3002",
+  "fields.bubbleBlur.label": "\u6C14\u6CE1\u6A21\u7CCA\u7A0B\u5EA6",
+  "fields.bubbleBlur.hint": "\u6A21\u7CCA\u534A\u900F\u660E\u6C14\u6CE1\u80CC\u540E\u7684\u533A\u57DF\uFF0C\u4E0E\u300C\u6C14\u6CE1\u4E0D\u900F\u660E\u5EA6\u300D\u76F8\u4E92\u72EC\u7ACB\uFF1B0 \u4E3A\u5173\u95ED\u3002"
 };
 var en = {
   nav: "Appearance tuner",
@@ -366,15 +405,21 @@ var en = {
   detectHint: "Disable the skin center, or do not set the same background values on both sides.",
   file: "Document",
   none: "(not written yet)",
-  fields: {
-    backgroundOpacity: { label: "Background occlusion", hint: "Fogs the artwork behind panels; 0 leaves it clear, 100 nearly hides it. Visible only on skins with backdrop art." },
-    backgroundBlurEmpty: { label: "Backdrop blur (empty)", hint: "Gaussian blur of the backdrop while the conversation is empty; 0 disables it." },
-    backgroundBlurContent: { label: "Backdrop blur (with content)", hint: "Gaussian blur of the backdrop while the conversation has messages; 0 disables it." },
-    inputCardBlur: { label: "Composer frost", hint: "Blurs only the region behind the composer card, never the whole backdrop." },
-    bubbleOpacity: { label: "Bubble opacity", hint: "Opacity of message bubbles; higher is easier to read. 100 is fully opaque." },
-    bubbleBlur: { label: "Bubble blur", hint: "Blurs the region behind translucent bubbles, independent of bubble opacity; 0 disables it." }
-  }
+  "fields.backgroundOpacity.label": "Background occlusion",
+  "fields.backgroundOpacity.hint": "Fogs the artwork behind panels; 0 leaves it clear, 100 nearly hides it. Visible only on skins with backdrop art.",
+  "fields.backgroundBlurEmpty.label": "Backdrop blur (empty)",
+  "fields.backgroundBlurEmpty.hint": "Gaussian blur of the backdrop while the conversation is empty; 0 disables it.",
+  "fields.backgroundBlurContent.label": "Backdrop blur (with content)",
+  "fields.backgroundBlurContent.hint": "Gaussian blur of the backdrop while the conversation has messages; 0 disables it.",
+  "fields.inputCardBlur.label": "Composer frost",
+  "fields.inputCardBlur.hint": "Blurs only the region behind the composer card, never the whole backdrop.",
+  "fields.bubbleOpacity.label": "Bubble opacity",
+  "fields.bubbleOpacity.hint": "Opacity of message bubbles; higher is easier to read. 100 is fully opaque.",
+  "fields.bubbleBlur.label": "Bubble blur",
+  "fields.bubbleBlur.hint": "Blurs the region behind translucent bubbles, independent of bubble opacity; 0 disables it."
 };
+var dictionaries = { zh, en };
+var fieldKeys = DEFAULT_FIELDS.map((field) => field.key);
 function skinCenterActive(doc = document) {
   return doc.querySelector("[data-dsh-composer-frost]") !== null || doc.documentElement.hasAttribute("data-dsh-skin") || doc.querySelector("[data-dsh-backdrop-active]") !== null;
 }

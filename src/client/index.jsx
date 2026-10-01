@@ -28,7 +28,8 @@ const SECTION_ID = 'skin-tuner'
 /** Locale namespace for the panel's dictionaries. */
 const NS = 'dsh-skin-tuner'
 
-/** Chinese dictionary. */
+/** Chinese dictionary. Keys are flat and dotted: the locale service looks a key
+ * up as a literal property of the dictionary, so a nested object never resolves. */
 const zh = {
   nav: '外观微调',
   title: '外观微调',
@@ -43,17 +44,21 @@ const zh = {
   detectHint: '建议停用皮肤中心，或在那边调完背景后不要在本页重复设置。',
   file: '存储文件',
   none: '（尚未落盘）',
-  fields: {
-    backgroundOpacity: { label: '背景遮挡', hint: '给面板背后的背景图加纱；0 完全不遮，100 几乎全遮。仅对带背景图的皮肤可见。' },
-    backgroundBlurEmpty: { label: '空对话背景模糊', hint: '对话为空时，背景图的高斯模糊强度；0 为关闭。' },
-    backgroundBlurContent: { label: '有对话背景模糊', hint: '对话有内容时，背景图的高斯模糊强度；0 为关闭。' },
-    inputCardBlur: { label: '输入卡磨砂', hint: '只模糊输入卡背后的区域，整张背景图不变糊。' },
-    bubbleOpacity: { label: '气泡不透明度', hint: '消息气泡的不透明度；越高字越清楚。100 为完全不透明。' },
-    bubbleBlur: { label: '气泡模糊程度', hint: '模糊半透明气泡背后的区域，与「气泡不透明度」相互独立；0 为关闭。' },
-  },
+  'fields.backgroundOpacity.label': '背景遮挡',
+  'fields.backgroundOpacity.hint': '给面板背后的背景图加纱；0 完全不遮，100 几乎全遮。仅对带背景图的皮肤可见。',
+  'fields.backgroundBlurEmpty.label': '空对话背景模糊',
+  'fields.backgroundBlurEmpty.hint': '对话为空时，背景图的高斯模糊强度；0 为关闭。',
+  'fields.backgroundBlurContent.label': '有对话背景模糊',
+  'fields.backgroundBlurContent.hint': '对话有内容时，背景图的高斯模糊强度；0 为关闭。',
+  'fields.inputCardBlur.label': '输入卡磨砂',
+  'fields.inputCardBlur.hint': '只模糊输入卡背后的区域，整张背景图不变糊。',
+  'fields.bubbleOpacity.label': '气泡不透明度',
+  'fields.bubbleOpacity.hint': '消息气泡的不透明度；越高字越清楚。100 为完全不透明。',
+  'fields.bubbleBlur.label': '气泡模糊程度',
+  'fields.bubbleBlur.hint': '模糊半透明气泡背后的区域，与「气泡不透明度」相互独立；0 为关闭。',
 }
 
-/** English dictionary. */
+/** English dictionary; same flat dotted keys as the Chinese one. */
 const en = {
   nav: 'Appearance tuner',
   title: 'Appearance tuner',
@@ -69,15 +74,26 @@ const en = {
   detectHint: 'Disable the skin center, or do not set the same background values on both sides.',
   file: 'Document',
   none: '(not written yet)',
-  fields: {
-    backgroundOpacity: { label: 'Background occlusion', hint: 'Fogs the artwork behind panels; 0 leaves it clear, 100 nearly hides it. Visible only on skins with backdrop art.' },
-    backgroundBlurEmpty: { label: 'Backdrop blur (empty)', hint: 'Gaussian blur of the backdrop while the conversation is empty; 0 disables it.' },
-    backgroundBlurContent: { label: 'Backdrop blur (with content)', hint: 'Gaussian blur of the backdrop while the conversation has messages; 0 disables it.' },
-    inputCardBlur: { label: 'Composer frost', hint: 'Blurs only the region behind the composer card, never the whole backdrop.' },
-    bubbleOpacity: { label: 'Bubble opacity', hint: 'Opacity of message bubbles; higher is easier to read. 100 is fully opaque.' },
-    bubbleBlur: { label: 'Bubble blur', hint: 'Blurs the region behind translucent bubbles, independent of bubble opacity; 0 disables it.' },
-  },
+  'fields.backgroundOpacity.label': 'Background occlusion',
+  'fields.backgroundOpacity.hint':
+    'Fogs the artwork behind panels; 0 leaves it clear, 100 nearly hides it. Visible only on skins with backdrop art.',
+  'fields.backgroundBlurEmpty.label': 'Backdrop blur (empty)',
+  'fields.backgroundBlurEmpty.hint': 'Gaussian blur of the backdrop while the conversation is empty; 0 disables it.',
+  'fields.backgroundBlurContent.label': 'Backdrop blur (with content)',
+  'fields.backgroundBlurContent.hint': 'Gaussian blur of the backdrop while the conversation has messages; 0 disables it.',
+  'fields.inputCardBlur.label': 'Composer frost',
+  'fields.inputCardBlur.hint': 'Blurs only the region behind the composer card, never the whole backdrop.',
+  'fields.bubbleOpacity.label': 'Bubble opacity',
+  'fields.bubbleOpacity.hint': 'Opacity of message bubbles; higher is easier to read. 100 is fully opaque.',
+  'fields.bubbleBlur.label': 'Bubble blur',
+  'fields.bubbleBlur.hint': 'Blurs the region behind translucent bubbles, independent of bubble opacity; 0 disables it.',
 }
+
+/** Both dictionaries, exported so a test can hold them to the locale contract. */
+export const dictionaries = { zh, en }
+
+/** The field keys the panel renders labels and hints for. */
+export const fieldKeys = DEFAULT_FIELDS.map((field) => field.key)
 
 /**
  * Whether the skin center is painting this page right now. The center is the

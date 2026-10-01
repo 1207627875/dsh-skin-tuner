@@ -35,10 +35,10 @@ const BUBBLE_ALPHA_VAR = '--dsh-skin-bubble-alpha'
 const BUBBLE_BLUR_VAR = '--dsh-skin-bubble-blur'
 const INPUT_CARD_BLUR_VAR = '--dsh-input-card-blur'
 
-/** Marks written to `<body>` so the tuner's own CSS can gate itself. */
+/** Marks the tuner writes so its own CSS can gate itself. */
 const ACTIVE_ATTR = 'data-skin-tuner'
-const CONTENT_ATTR = 'data-skin-tuner-content'
 const BUBBLE_BLUR_ATTR = 'data-skin-tuner-bubble-blur'
+const BUBBLE_BLUR_TARGET_ATTR = 'data-skin-tuner-bubble'
 const COMPOSER_FROST_ATTR = 'data-skin-tuner-composer-frost'
 const BACKDROP_ELEM_ATTR = 'data-skin-tuner-backdrop'
 
@@ -240,47 +240,57 @@ export function applySettings(settings, doc = document) {
   const style = doc.createElement('style')
   style.dataset.skinTunerStyle = ''
   style.textContent = [
-    `body[${ACTIVE_ATTR}] [${BACKDROP_ELEM_ATTR}] {`,
+    `html > [${BACKDROP_ELEM_ATTR}] {`,
     '  position: fixed;',
     '  inset: 0;',
     '  z-index: 0;',
     '  pointer-events: none;',
     '  background: var(--dsw-alias-bg-base, rgb(0 0 0 / 45%));',
     '}',
-    `body[${ACTIVE_ATTR}][${CONTENT_ATTR}] [${BACKDROP_ELEM_ATTR}] {`,
+    // `isolation: isolate` gives each blurred element its own backdrop root.
+    // Without it a backdrop-filter element blurs everything painted below it -
+    // including the other one of ours - which used to smear the composer frost
+    // into the conversation.
+    `html > [${BACKDROP_ELEM_ATTR}][data-blur] {`,
+    '  isolation: isolate;',
     '  backdrop-filter: blur(var(--dsh-skin-tuner-bg-blur, 0px));',
     '  -webkit-backdrop-filter: blur(var(--dsh-skin-tuner-bg-blur, 0px));',
     '}',
-    `body[${ACTIVE_ATTR}][${BUBBLE_BLUR_ATTR}] ${MESSAGE_ROW_SELECTOR} > * {`,
-    '  backdrop-filter: blur(var(--dsh-skin-bubble-blur, 0px));',
-    '  -webkit-backdrop-filter: blur(var(--dsh-skin-bubble-blur, 0px));',
+    `html > [${COMPOSER_FROST_ATTR}][data-blur] {`,
+    '  isolation: isolate;',
+    '  backdrop-filter: blur(var(--dsh-input-card-blur, 10px));',
+    '  -webkit-backdrop-filter: blur(var(--dsh-input-card-blur, 10px));',
     '}',
-    `body[${ACTIVE_ATTR}] [${COMPOSER_FROST_ATTR}] {`,
+    `html > [${COMPOSER_FROST_ATTR}] {`,
     '  position: fixed;',
     '  z-index: 1;',
     '  pointer-events: none;',
     '  border-radius: var(--dsw-radius-panel, 16px);',
-    '  backdrop-filter: blur(var(--dsh-input-card-blur, 10px));',
-    '  -webkit-backdrop-filter: blur(var(--dsh-input-card-blur, 10px));',
     '}',
-    '@media (prefers-reduced-motion: reduce) {',
-    `  body[${ACTIVE_ATTR}] [${BACKDROP_ELEM_ATTR}],`,
-    `  body[${ACTIVE_ATTR}] [${COMPOSER_FROST_ATTR}] { transition: none; }`,
+    // Bubble blur is the only rule that a skin may already implement; it stays
+    // off unless the slider actually asks for it, so the default paint is
+    // byte-identical to no tuner at all.
+    `html[${BUBBLE_BLUR_ATTR}] [${BUBBLE_BLUR_TARGET_ATTR}] {`,
+    '  isolation: isolate;',
+    '  backdrop-filter: blur(var(--dsh-skin-bubble-blur, 0px));',
+    '  -webkit-backdrop-filter: blur(var(--dsh-skin-bubble-blur, 0px));',
     '}',
   ].join('\n')
   doc.head.append(style)
 
-  const previous = new Map()
-  const remember = (element, property) => {
-    previous.set(`${property}`, element.style.getPropertyValue(property))
-  }
+  const startingBodyVars = new Map()
+  const previousAttrs = new Map()
   const setVar = (property, value) => {
-    remember(body, property)
+    // The value seen before this plugin ever wrote the property is the only one
+    // worth restoring; a value it wrote itself and then moved (the empty vs
+    // with-content blur step) must be cleared, not reinstated.
+    if (!startingBodyVars.has(property)) startingBodyVars.set(property, body.style.getPropertyValue(property))
     body.style.setProperty(property, value)
   }
   const setAttr = (element, attribute, value) => {
-    const key = `attr:${attribute}`
-    if (!previous.has(key)) previous.set(key, element.getAttribute(attribute))
+    const scope = element === html ? 'html' : 'body'
+    const key = `attr:${attribute}|${scope}`
+    if (!previousAttrs.has(key)) previousAttrs.set(key, element.getAttribute(attribute))
     if (value === null) element.removeAttribute(attribute)
     else element.setAttribute(attribute, value)
   }
@@ -293,15 +303,40 @@ export function applySettings(settings, doc = document) {
   frost.setAttribute(COMPOSER_FROST_ATTR, '')
   frost.setAttribute('aria-hidden', 'true')
 
+  /**
+   * Mirror the active background blur onto the backdrop. A zero strength drops
+   * the attribute as well, so `backdrop-filter` is absent rather than `blur(0)`
+   * - the latter still creates a backdrop root and a compositing layer.
+   * @param {number} value - the blur strength in px.
+   */
+  const setBlurStrength = (value) => {
+    if (value > 0) {
+      backdrop.setAttribute('data-blur', '')
+      setVar('--dsh-skin-tuner-bg-blur', `${value}px`)
+    } else {
+      backdrop.removeAttribute('data-blur')
+      body.style.removeProperty('--dsh-skin-tuner-bg-blur')
+    }
+  }
+
   const enabled = settings.enabled !== false
   if (enabled) {
-    body.append(backdrop, frost)
+    // Both surfaces live on the document element, outside the app root: `body`
+    // is the app's own subtree, where an ancestor's filter/transform turns a
+    // `position: fixed` child into a positioned descendant and the surface
+    // lands in the wrong place.
+    html.append(backdrop)
+    if (settings.inputCardBlur > 0) {
+      frost.setAttribute('data-blur', '')
+      html.append(frost)
+    }
     setAttr(body, ACTIVE_ATTR, '')
+    setAttr(html, BUBBLE_BLUR_ATTR, settings.bubbleBlur > 0 ? '' : null)
     setVar(SCRIM_VAR, String(settings.backgroundOpacity / 100))
     setVar(BUBBLE_ALPHA_VAR, String(settings.bubbleOpacity / 100))
     setVar(BUBBLE_BLUR_VAR, `${settings.bubbleBlur}px`)
     setVar(INPUT_CARD_BLUR_VAR, `${settings.inputCardBlur}px`)
-    if (settings.bubbleBlur > 0) setAttr(body, BUBBLE_BLUR_ATTR, '')
+    setBlurStrength(settings.backgroundBlurEmpty)
   }
 
   const timers = new Set()
@@ -311,21 +346,30 @@ export function applySettings(settings, doc = document) {
     return id
   }
 
-  /** Track whether the conversation has message content, and mirror the active background blur. */
+  /** Follow the conversation state into the empty vs with-content blur step. */
   const syncContentState = () => {
     if (!enabled) return
     const hasContent = doc.querySelector(MESSAGE_ROW_SELECTOR) !== null
-    if (hasContent) setAttr(body, CONTENT_ATTR, '')
-    else setAttr(body, CONTENT_ATTR, null)
-    html.style.setProperty(
-      '--dsh-skin-tuner-bg-blur',
-      `${hasContent ? settings.backgroundBlurContent : settings.backgroundBlurEmpty}px`,
-    )
+    setBlurStrength(hasContent ? settings.backgroundBlurContent : settings.backgroundBlurEmpty)
+  }
+
+  /**
+   * Mark the message rows the bubble-blur rule targets, and only while the
+   * slider asks for it: with the value at 0 no rule matches any row.
+   */
+  const syncBubbleBlurTargets = () => {
+    if (!enabled) return
+    const wanted = settings.bubbleBlur > 0
+    if (!wanted) setAttr(html, BUBBLE_BLUR_ATTR, null)
+    for (const row of doc.querySelectorAll(MESSAGE_ROW_SELECTOR)) {
+      if (wanted) row.setAttribute(BUBBLE_BLUR_TARGET_ATTR, '')
+      else row.removeAttribute(BUBBLE_BLUR_TARGET_ATTR)
+    }
   }
 
   /** Follow the composer card's box so the frost sits exactly behind it. */
   const syncComposerFrost = () => {
-    if (!enabled) return
+    if (!enabled || settings.inputCardBlur <= 0) return
     const seat = doc.querySelector(COMPOSER_SELECTOR)
     if (seat === null) {
       frost.style.display = 'none'
@@ -345,8 +389,10 @@ export function applySettings(settings, doc = document) {
 
   if (enabled) {
     syncContentState()
+    syncBubbleBlurTargets()
     syncComposerFrost()
     every(syncContentState, 500)
+    every(syncBubbleBlurTargets, 1000)
     every(syncComposerFrost, 250)
     doc.addEventListener('scroll', syncComposerFrost, { capture: true, passive: true })
     globalThis.addEventListener?.('resize', syncComposerFrost, { passive: true })
@@ -360,15 +406,21 @@ export function applySettings(settings, doc = document) {
     style.remove()
     backdrop.remove()
     frost.remove()
-    for (const [key, value] of previous) {
-      if (key.startsWith('attr:')) {
-        const attribute = key.slice(5)
-        if (value === null) body.removeAttribute(attribute)
-        else body.setAttribute(attribute, value)
-      } else if (value === '') body.style.removeProperty(key)
-      else body.style.setProperty(key, value)
+    for (const row of doc.querySelectorAll(`[${BUBBLE_BLUR_TARGET_ATTR}]`)) {
+      row.removeAttribute(BUBBLE_BLUR_TARGET_ATTR)
     }
-    html.style.removeProperty('--dsh-skin-tuner-bg-blur')
+    for (const [property, starting] of startingBodyVars) {
+      if (starting === '') body.style.removeProperty(property)
+      else body.style.setProperty(property, starting)
+    }
+    startingBodyVars.clear()
+    for (const [key, value] of previousAttrs) {
+      const [attribute, scope] = key.slice(5).split('|')
+      const element = scope === 'html' ? html : body
+      if (value === null) element.removeAttribute(attribute)
+      else element.setAttribute(attribute, value)
+    }
+    previousAttrs.clear()
   }
 }
 

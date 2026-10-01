@@ -97,10 +97,19 @@ Bundle format: the DSH client wraps each plugin as `window.__ModuleLoader__.load
 
 ## Known limits
 
+- **Zero means no blur layer at all**: at 0 the `backdrop-filter` and its element are *absent*, not `blur(0px)` — the latter still creates a backdrop root and a compositing layer. With the shipped defaults the only blurred surface is the composer frost.
+- **Every blurred surface carries its own backdrop root** (`isolation: isolate`). Without it a `backdrop-filter` blurs *everything* painted beneath it, including this plugin's other surface — which smears the composer frost across the conversation.
+- **Both injected elements live on `<html>`, not inside `body`**: any ancestor in the app's subtree with a filter or transform turns a `position: fixed` child into a positioned descendant and the surface lands in the wrong place.
 - Bubble blur needs translucent bubbles; fully opaque ones show nothing.
 - Bubble blur adds `backdrop-filter` per message row; very long conversations may cost GPU. Leave it at 0 when unused.
 - The empty/with-content backdrop switch is polled every 500 ms, so the change can lag by a moment.
 - Occlusion and frost are visible only on skins that paint backdrop art; the official default has none.
+
+## Implementation notes
+
+- **Dictionaries must use flat, dotted keys.** The client locale resolves a key as a literal property (`dict[key]`) and never walks a nested object, so `{ fields: { x: { label } } }` silently falls back to printing the key. `tests/bundle-smoke.test.mjs` pins this contract.
+- **Range clamping lives on the Host**: the panel paints optimistically, POSTs `/dsh-skin-tuner/settings`, and the Host clamps against the schema before the atomic write.
+- **Writes must be same-origin**: the two spellings of one loopback listener (`127.0.0.1` and `localhost`, same port) are accepted as one origin; a missing `Origin` header or a different port is refused with 403, and the refusal names the `Origin` and `Host` it saw.
 
 ## License
 
