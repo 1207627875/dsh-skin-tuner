@@ -1,0 +1,75 @@
+{
+  "name": "dsh-skin-tuner",
+  "version": "0.1.0",
+  "description": "Appearance tuner for DeepSeek Harness (dsh): background occlusion, background blur, composer-card frost, message-bubble opacity and bubble backdrop blur as one independent Settings section — no skin required.",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "README.md",
+    "README.zh.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "cordis-plugin",
+    "skin",
+    "theme",
+    "appearance",
+    "opacity",
+    "backdrop-blur"
+  ],
+  "license": "MIT",
+  "author": "1207627875",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/1207627875/dsh-skin-tuner.git"
+  },
+  "homepage": "https://github.com/1207627875/dsh-skin-tuner#readme",
+  "bugs": {
+    "url": "https://github.com/1207627875/dsh-skin-tuner/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node ./scripts/build-client.mjs",
+    "test": "node --test \"tests/*.test.mjs\""
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.12"
+  },
+  "dsh": {
+    "engines": {
+      "dsh": ">=0.1.7-rc.1"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ]
+    }
+  }
+}

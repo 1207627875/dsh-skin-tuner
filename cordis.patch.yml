@@ -1,0 +1,8 @@
+# dsh-skin-tuner bundle patch.
+# Mounts one row: the Host half owns the durable appearance document under
+# $DSH_HOME and serves it on /dsh-skin-tuner/settings; the browser half
+# (declared by package.json dsh.client) renders the Settings section and
+# applies the values to the live shell. Neither half mounts or requires a skin.
+- insert:
+    - id: ui-skin-tuner
+      name: dsh-skin-tuner

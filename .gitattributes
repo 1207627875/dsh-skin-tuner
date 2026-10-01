@@ -1,0 +1,3 @@
+* text=auto eol=lf
+client.js -diff linguist-generated
+client.js.map -diff linguist-generated

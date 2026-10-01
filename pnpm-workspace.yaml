@@ -1,0 +1,7 @@
+packages:
+  - .
+
+# esbuild ships its platform binary through a postinstall script; pnpm >= 10
+# refuses to run it until the package is named here.
+allowBuilds:
+  esbuild: true
