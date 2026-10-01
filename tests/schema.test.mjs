@@ -61,3 +61,13 @@ test('the store round-trips through a real file', async () => {
   assert.equal(resolved.bubbleBlur, 4)
   rmSync(dir, { recursive: true, force: true })
 })
+
+test('a hand-saved file with a byte-order mark still parses', async () => {
+  const { stripByteOrderMark } = await import(new URL('../src/host/store.js', import.meta.url))
+  const withBom = `\uFEFF${JSON.stringify({ bubbleOpacity: 42 })}`
+  assert.equal(resolveSettings(JSON.parse(stripByteOrderMark(withBom))).bubbleOpacity, 42)
+  // Plain JSON.parse rejects the same text - which is exactly the failure a
+  // document saved by a Windows editor would otherwise cause.
+  assert.throws(() => JSON.parse(withBom))
+  assert.equal(stripByteOrderMark('{"a":1}'), '{"a":1}')
+})

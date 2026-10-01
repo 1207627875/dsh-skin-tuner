@@ -54,11 +54,23 @@ export function readSettings(options = {}) {
     return { ...DEFAULT_SETTINGS }
   }
   try {
-    return resolveSettings(JSON.parse(text))
+    // A byte-order mark is what every Windows editor writes when the file is
+    // saved by hand; `JSON.parse` rejects it, and a hand-edited file must not
+    // silently revert the panel to its defaults.
+    return resolveSettings(JSON.parse(stripByteOrderMark(text)))
   } catch (error) {
     if (typeof warn === 'function') warn(`${filename} is not valid JSON (${String(error)}); using defaults`)
     return { ...DEFAULT_SETTINGS }
   }
+}
+
+/**
+ * Drop a leading UTF-8 byte-order mark.
+ * @param {string} text - file contents.
+ * @returns {string} the contents without a leading BOM.
+ */
+export function stripByteOrderMark(text) {
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text
 }
 
 /**
